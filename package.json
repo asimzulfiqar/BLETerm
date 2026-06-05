@@ -10,7 +10,8 @@
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "build": "tsc --noEmit && vite build",
     "start": "electron .",
-    "dist": "npm run build && electron-builder",
+    "dist": "npm run build && npm run dist:existing",
+    "dist:existing": "powershell -NoProfile -ExecutionPolicy Bypass -File build/installer/create-from-unpacked.ps1",
     "test": "vitest run"
   },
   "dependencies": {
@@ -51,8 +52,7 @@
     ],
     "win": {
       "target": [
-        "nsis",
-        "msix"
+        "nsis"
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
