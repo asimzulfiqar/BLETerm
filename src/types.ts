@@ -31,6 +31,7 @@ export interface BleDevice {
   services: string[];
   lastSeen: string;
   detectedProfile: GattProfile;
+  transport?: "demo" | "webBluetooth";
   knownProfileId?: string;
   favorite?: boolean;
 }

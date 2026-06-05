@@ -2,12 +2,13 @@
 
 BLETerm is a Windows desktop AT-command terminal for BLE UART style devices. It is built with Electron, React, TypeScript, Zustand, and xterm.js.
 
-This first `v0.1` release is an installable product prototype. It includes the desktop UI, device/profile/preset/routine/logging scaffolding, demo BLE devices, terminal behavior, export hooks, and local persistence. Real hardware BLE transport is not enabled yet; scanner results and responses are currently simulated so the workflow can be tested without a device.
+This first `v0.1` release is an installable product prototype. It includes the desktop UI, device/profile/preset/routine/logging scaffolding, demo BLE devices, terminal behavior, export hooks, local persistence, and an initial Web Bluetooth transport for real BLE UART devices.
 
 ## Features in v0.1
 
 - Industrial dark three-panel desktop UI
-- Demo BLE scanner with NUS, HM-10, and ESP32-style devices
+- Web Bluetooth device selection for real BLE UART devices
+- Demo BLE scanner entries for NUS, HM-10, and ESP32-style devices
 - Built-in starter profiles for Dragino, Nordic, HM-10, ESP32, and generic AT devices
 - xterm.js terminal with colored TX/RX/system/automation messages
 - Command quick-send buttons, history, case mode, line terminator, and timeout handling
@@ -59,7 +60,9 @@ AT+TDC=300000
 5. Use the right panel for presets, routines, watchers, and profile settings.
 6. Use **Logs** to open the session log folder.
 
-Commands are blocked when no device session is connected.
+When Web Bluetooth is available, **Scan** opens the OS/browser BLE picker and adds the selected real device to the device list. Select that device to connect, then send commands normally. Web Bluetooth authorizes one selected device at a time, so it does not provide the same passive multi-device RSSI scan behavior planned for the future WinRT transport.
+
+Commands are blocked when no device session is connected. Demo devices still use simulated responses; real Web Bluetooth devices receive actual writes and incoming GATT notifications are printed as RX terminal output.
 
 ## Development
 
@@ -97,7 +100,8 @@ The generated installer and portable zip are written to `release/` and are inten
 
 ## Current Limitations
 
-- Real Windows BLE transport is not implemented in `v0.1`.
+- Web Bluetooth is implemented as the first real BLE transport; native WinRT BLE is still pending.
+- Web Bluetooth device discovery is picker-based and one device at a time.
 - Installer is unsigned.
 - MSIX packaging is not set up yet.
 - The automation editor is a scaffold, not a full visual routine builder.
@@ -105,8 +109,8 @@ The generated installer and portable zip are written to `release/` and are inten
 
 ## Roadmap
 
-- Add real BLE transport using Web Bluetooth or WinRT.
-- Implement NUS/HM-10/custom GATT auto-detection against hardware.
+- Add native WinRT BLE scanning for passive multi-device RSSI discovery.
+- Broaden hardware-tested NUS/HM-10/custom GATT auto-detection.
 - Add a full visual routine editor with reorderable steps.
 - Add signed NSIS/MSIX release packaging.
 - Add hardware-in-loop testing for Dragino, Nordic, HM-10, and ESP32 devices.

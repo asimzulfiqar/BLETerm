@@ -4,6 +4,7 @@ const fs = require("fs");
 const log = require("electron-log");
 
 let store;
+let bluetoothSelectionTimer;
 
 log.transports.file.level = "info";
 
@@ -30,6 +31,25 @@ function logsRoot() {
 }
 
 function attachWindowDiagnostics(win) {
+  win.webContents.on("select-bluetooth-device", (event, deviceList, callback) => {
+    event.preventDefault();
+    clearTimeout(bluetoothSelectionTimer);
+
+    if (deviceList.length === 0) {
+      bluetoothSelectionTimer = setTimeout(() => callback(""), 10000);
+      return;
+    }
+
+    const namedDevice = deviceList.find((device) => device.deviceName && device.deviceName.trim().length > 0);
+    const selected = namedDevice ?? deviceList[0];
+    directLog(`Selected Bluetooth device ${selected.deviceName || selected.deviceId}`);
+    callback(selected.deviceId);
+  });
+
+  win.webContents.session.setBluetoothPairingHandler((_details, callback) => {
+    callback({ confirmed: true });
+  });
+
   win.on("close", () => {
     directLog("Main window close requested.");
     log.info("Main window close requested.");

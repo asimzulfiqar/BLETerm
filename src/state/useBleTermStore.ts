@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { webBluetoothTransport } from "../ble/webBluetoothTransport";
 import { mockDevices, presetPacks, profiles, routines, watchers } from "../data/seeds";
 import type { BleDevice, ConnectionState, DeviceProfile, PresetPack, Routine, SessionEvent, Watcher } from "../types";
 
@@ -135,13 +136,30 @@ export const useBleTermStore = create<BleTermState>((set, get) => ({
   },
   scan: async () => {
     set({ connectionState: "Scanning", devices: [] });
-    await new Promise((resolve) => setTimeout(resolve, 700));
     const known = get().profiles;
-    const devices = mockDevices
+
+    let realDevice: BleDevice | undefined;
+    if (webBluetoothTransport.isSupported()) {
+      try {
+        await get().appendEvent({ type: "system", data: "Opening Web Bluetooth device picker..." });
+        realDevice = await webBluetoothTransport.requestDevice(known);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await get().appendEvent({ type: "system", data: `Web Bluetooth selection skipped: ${message}` });
+      }
+    } else {
+      await get().appendEvent({ type: "system", data: "Web Bluetooth is not available. Showing demo devices." });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const demoDevices = mockDevices
       .map((device) => {
         const match = known.find((profile) => new RegExp(profile.bleNamePattern || ".*", "i").test(device.name) || profile.bleAddress === device.address);
-        return { ...device, knownProfileId: match?.id, favorite: Boolean(match?.favorite), lastSeen: new Date().toISOString() };
-      })
+        return { ...device, transport: "demo" as const, knownProfileId: match?.id, favorite: Boolean(match?.favorite), lastSeen: new Date().toISOString() };
+      });
+
+    const devices = [realDevice, ...demoDevices]
+      .filter((device): device is BleDevice => Boolean(device))
       .sort((a, b) => Number(b.favorite) - Number(a.favorite) || b.rssi - a.rssi);
     set({ devices, connectionState: "Idle" });
   },
@@ -149,8 +167,28 @@ export const useBleTermStore = create<BleTermState>((set, get) => ({
     const profileId = device.knownProfileId ?? get().activeProfileId;
     set({ connectionState: "Connecting", activeDevice: device, activeProfileId: profileId });
     await get().appendEvent({ type: "system", data: `Connecting to ${device.name} (${device.detectedProfile})...` });
-    await new Promise((resolve) => setTimeout(resolve, 400));
     const profile = get().profiles.find((item) => item.id === profileId);
+
+    try {
+      if (device.transport === "webBluetooth") {
+        webBluetoothTransport.setReceiveHandler((data) => {
+          void get().appendEvent({ type: "rx", data });
+        });
+        webBluetoothTransport.setDisconnectHandler(() => {
+          set({ connectionState: "Disconnected", activeDevice: undefined });
+          void get().appendEvent({ type: "system", data: `${device.name} disconnected.` });
+        });
+        await webBluetoothTransport.connect(device.id, profile ?? profiles[0]);
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      set({ connectionState: "Disconnected", activeDevice: undefined });
+      await get().appendEvent({ type: "error", data: `Connection failed: ${message}` });
+      return;
+    }
+
     if (profile && profile.auth.type !== "none" && profile.auth.credential) {
       set({ connectionState: "Authenticating" });
       await get().appendEvent({ type: "system", data: "Authenticating with saved profile credential..." });
@@ -161,6 +199,7 @@ export const useBleTermStore = create<BleTermState>((set, get) => ({
   },
   disconnect: () => {
     const device = get().activeDevice;
+    if (device?.transport === "webBluetooth") webBluetoothTransport.disconnect();
     set({ connectionState: "Disconnected", activeDevice: undefined });
     void get().appendEvent({ type: "system", data: device ? `Disconnected from ${device.name}.` : "Disconnected." });
   },
@@ -190,8 +229,17 @@ export const useBleTermStore = create<BleTermState>((set, get) => ({
     await get().appendEvent({ type: "tx", data: raw, source });
     const chunks = Math.max(1, Math.ceil(raw.length / (profile.mtu === "auto" ? 20 : profile.mtu)));
     if (chunks > 1) await get().appendEvent({ type: "system", data: `Chunked TX into ${chunks} BLE write packets.` });
-    await new Promise((resolve) => setTimeout(resolve, Math.min(profile.responseTimeoutMs, 280)));
-    await get().appendEvent({ type: "rx", data: `${responseFor(transformed)}\r\n` });
+    if (get().activeDevice?.transport === "webBluetooth") {
+      try {
+        await webBluetoothTransport.write(raw, profile.mtu === "auto" ? 20 : profile.mtu);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await get().appendEvent({ type: "error", data: `BLE write failed: ${message}` });
+      }
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(profile.responseTimeoutMs, 280)));
+      await get().appendEvent({ type: "rx", data: `${responseFor(transformed)}\r\n` });
+    }
   },
   runRoutine: async (routine) => {
     if (get().connectionState !== "Connected" || !get().activeDevice) {
