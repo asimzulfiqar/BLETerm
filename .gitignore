@@ -3,3 +3,9 @@ dist
 release
 *.log
 .vite
+build/asar-work
+build/installer/*.zip
+build/installer/*.cab
+build/installer/*.ddf
+build/installer/*.inf
+build/installer/*.rpt
