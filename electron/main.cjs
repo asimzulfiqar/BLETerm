@@ -5,6 +5,8 @@ const log = require("electron-log");
 
 let store;
 
+log.transports.file.level = "info";
+
 async function initStore() {
   const { default: Store } = await import("electron-store");
   store = new Store({
@@ -15,6 +17,24 @@ async function initStore() {
 
 function logsRoot() {
   return path.join(app.getPath("userData"), "logs");
+}
+
+function attachWindowDiagnostics(win) {
+  win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
+    log.error(`Renderer failed to load ${validatedUrl}: ${errorCode} ${errorDescription}`);
+  });
+
+  win.webContents.on("render-process-gone", (_event, details) => {
+    log.error(`Renderer process gone: ${details.reason} exitCode=${details.exitCode}`);
+  });
+
+  win.webContents.on("unresponsive", () => {
+    log.warn("Renderer became unresponsive.");
+  });
+
+  win.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    if (level >= 2) log.warn(`Renderer console: ${message} (${sourceId}:${line})`);
+  });
 }
 
 function createWindow() {
@@ -32,6 +52,7 @@ function createWindow() {
       webSecurity: true
     }
   });
+  attachWindowDiagnostics(win);
 
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -52,6 +73,14 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+process.on("uncaughtException", (error) => {
+  log.error("Uncaught main-process exception", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  log.error("Unhandled main-process rejection", reason);
 });
 
 ipcMain.handle("store:get", (_event, key, fallback) => store?.get(key, fallback) ?? fallback);
