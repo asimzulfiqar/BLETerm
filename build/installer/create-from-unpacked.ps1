@@ -15,6 +15,10 @@ if (-not (Test-Path (Join-Path $unpacked "BLETerm.exe"))) {
 Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $payloadZip -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $setup -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $release "~BLETerm-Setup.CAB") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $release "~BLETerm-Setup.DDF") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $release "~BLETerm-Setup.RPT") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $release "~BLETerm-Setup_LAYOUT.INF") -Force -ErrorAction SilentlyContinue
 
 Compress-Archive -Path (Join-Path $unpacked "*") -DestinationPath $zip -Force
 Copy-Item -LiteralPath $zip -Destination $payloadZip -Force
