@@ -4,6 +4,9 @@ release
 *.log
 .vite
 build/asar-work
+build/inspect-*
+build/*-check
+build/setup-*
 build/installer/*.zip
 build/installer/*.cab
 build/installer/*.ddf
