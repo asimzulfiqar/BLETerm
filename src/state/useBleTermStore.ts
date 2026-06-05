@@ -181,6 +181,10 @@ export const useBleTermStore = create<BleTermState>((set, get) => ({
     const profile = get().profiles.find((item) => item.id === get().activeProfileId) ?? profiles[0];
     const transformed = applyCase(command.trim(), profile);
     if (!transformed) return;
+    if (get().connectionState !== "Connected" || !get().activeDevice) {
+      await get().appendEvent({ type: "error", data: `Cannot send "${transformed}" - no BLE device is connected.` });
+      return;
+    }
     const raw = `${transformed}${terminator(profile)}`;
     set((state) => ({ commandHistory: [transformed, ...state.commandHistory.filter((item) => item !== transformed)].slice(0, 500), historyCursor: -1 }));
     await get().appendEvent({ type: "tx", data: raw, source });
@@ -190,6 +194,10 @@ export const useBleTermStore = create<BleTermState>((set, get) => ({
     await get().appendEvent({ type: "rx", data: `${responseFor(transformed)}\r\n` });
   },
   runRoutine: async (routine) => {
+    if (get().connectionState !== "Connected" || !get().activeDevice) {
+      await get().appendEvent({ type: "error", data: `Cannot run "${routine.name}" - no BLE device is connected.` });
+      return;
+    }
     await get().appendEvent({ type: "automation", data: `Routine started: ${routine.name}` });
     for (const step of routine.steps) {
       await get().appendEvent({ type: "automation", data: `Step ${step.id}: ${step.label ?? step.type}` });
