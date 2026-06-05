@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Notification } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Menu } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const log = require("electron-log");
@@ -6,6 +6,16 @@ const log = require("electron-log");
 let store;
 
 log.transports.file.level = "info";
+
+function directLog(message) {
+  try {
+    const dir = logsRoot();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, "main-process.log"), `${new Date().toISOString()} ${message}\n`, "utf8");
+  } catch {
+    // Logging must never break app startup.
+  }
+}
 
 async function initStore() {
   const { default: Store } = await import("electron-store");
@@ -20,20 +30,36 @@ function logsRoot() {
 }
 
 function attachWindowDiagnostics(win) {
+  win.on("close", () => {
+    directLog("Main window close requested.");
+    log.info("Main window close requested.");
+  });
+
+  win.on("closed", () => {
+    directLog("Main window closed.");
+    log.info("Main window closed.");
+  });
+
   win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
+    directLog(`Renderer failed to load ${validatedUrl}: ${errorCode} ${errorDescription}`);
     log.error(`Renderer failed to load ${validatedUrl}: ${errorCode} ${errorDescription}`);
   });
 
   win.webContents.on("render-process-gone", (_event, details) => {
+    directLog(`Renderer process gone: ${details.reason} exitCode=${details.exitCode}`);
     log.error(`Renderer process gone: ${details.reason} exitCode=${details.exitCode}`);
   });
 
   win.webContents.on("unresponsive", () => {
+    directLog("Renderer became unresponsive.");
     log.warn("Renderer became unresponsive.");
   });
 
   win.webContents.on("console-message", (_event, level, message, line, sourceId) => {
-    if (level >= 2) log.warn(`Renderer console: ${message} (${sourceId}:${line})`);
+    if (level >= 2) {
+      directLog(`Renderer console: ${message} (${sourceId}:${line})`);
+      log.warn(`Renderer console: ${message} (${sourceId}:${line})`);
+    }
   });
 }
 
@@ -63,6 +89,9 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  Menu.setApplicationMenu(null);
+  directLog(`BLETerm starting. version=${app.getVersion()} userData=${app.getPath("userData")}`);
+  log.info(`BLETerm starting. version=${app.getVersion()} userData=${app.getPath("userData")}`);
   await initStore();
   fs.mkdirSync(logsRoot(), { recursive: true });
   createWindow();
@@ -72,14 +101,21 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  directLog("All windows closed.");
   if (process.platform !== "darwin") app.quit();
 });
 
+app.on("before-quit", () => {
+  directLog("Application before-quit.");
+});
+
 process.on("uncaughtException", (error) => {
+  directLog(`Uncaught main-process exception ${error?.stack ?? error}`);
   log.error("Uncaught main-process exception", error);
 });
 
 process.on("unhandledRejection", (reason) => {
+  directLog(`Unhandled main-process rejection ${reason?.stack ?? reason}`);
   log.error("Unhandled main-process rejection", reason);
 });
 

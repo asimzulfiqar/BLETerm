@@ -75,6 +75,12 @@ Start the app in development mode:
 npm run dev
 ```
 
+The npm scripts explicitly clear `ELECTRON_RUN_AS_NODE`. If you launch Electron manually from a terminal and the app immediately closes or behaves like a blank process, check that this variable is not set:
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+```
+
 Build the renderer:
 
 ```powershell
