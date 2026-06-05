@@ -1,13 +1,17 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Notification } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const Store = require("electron-store");
 const log = require("electron-log");
 
-const store = new Store({
-  name: "bleterm",
-  encryptionKey: "bleterm-local-profile-store-v1"
-});
+let store;
+
+async function initStore() {
+  const { default: Store } = await import("electron-store");
+  store = new Store({
+    name: "bleterm",
+    encryptionKey: "bleterm-local-profile-store-v1"
+  });
+}
 
 function logsRoot() {
   return path.join(app.getPath("userData"), "logs");
@@ -37,7 +41,8 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await initStore();
   fs.mkdirSync(logsRoot(), { recursive: true });
   createWindow();
   app.on("activate", () => {
@@ -49,9 +54,9 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-ipcMain.handle("store:get", (_event, key, fallback) => store.get(key, fallback));
+ipcMain.handle("store:get", (_event, key, fallback) => store?.get(key, fallback) ?? fallback);
 ipcMain.handle("store:set", (_event, key, value) => {
-  store.set(key, value);
+  store?.set(key, value);
   return true;
 });
 
