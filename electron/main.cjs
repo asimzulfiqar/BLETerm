@@ -12,6 +12,8 @@ let store;
 let bluetoothSelectionTimer;
 let pendingBluetoothCallback = null;
 const discoveredBleDevices = new Map(); // deduplicates as events fire repeatedly
+let lastSelectedDeviceId = null;  // auto-confirm same device during gatt.connect()
+let lastSelectionTs = 0;          // timestamp of last user pick
 
 log.transports.file.level = "info";
 
@@ -41,6 +43,17 @@ function attachWindowDiagnostics(win) {
   win.webContents.on("select-bluetooth-device", (event, deviceList, callback) => {
     event.preventDefault();
 
+    // select-bluetooth-device also fires during gatt.connect() — if we recently picked
+    // a device, auto-confirm it instead of showing the picker again.
+    if (lastSelectedDeviceId && Date.now() - lastSelectionTs < 10000) {
+      const match = deviceList.find((d) => d.deviceId === lastSelectedDeviceId);
+      if (match) {
+        directLog(`BLE auto-confirm during GATT connect: ${match.deviceName || match.deviceId}`);
+        callback(lastSelectedDeviceId);
+        return;
+      }
+    }
+
     // Accumulate all discovered devices (event fires repeatedly as more are found)
     for (const device of deviceList) {
       discoveredBleDevices.set(device.deviceId, device);
@@ -66,6 +79,8 @@ function attachWindowDiagnostics(win) {
 
       if (candidates.length === 1) {
         directLog(`BLE scan: auto-selected single device "${candidates[0].deviceName || candidates[0].deviceId}"`);
+        lastSelectedDeviceId = candidates[0].deviceId;
+        lastSelectionTs = Date.now();
         callback(candidates[0].deviceId);
         return;
       }
@@ -82,6 +97,8 @@ function attachWindowDiagnostics(win) {
       });
 
       if (response < candidates.length) {
+        lastSelectedDeviceId = candidates[response].deviceId;
+        lastSelectionTs = Date.now();
         directLog(`BLE scan: user selected "${candidates[response].deviceName || candidates[response].deviceId}"`);
         callback(candidates[response].deviceId);
       } else {
@@ -145,9 +162,15 @@ function createWindow() {
   });
   attachWindowDiagnostics(win);
 
+  // F12 opens DevTools on demand — auto-opening causes a FATAL V8Inspector crash in Electron 33
+  win.webContents.on("before-input-event", (_event, input) => {
+    if (input.type === "keyDown" && input.key === "F12") {
+      win.webContents.toggleDevTools();
+    }
+  });
+
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL);
-    win.webContents.openDevTools({ mode: "detach" });
   } else {
     win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
