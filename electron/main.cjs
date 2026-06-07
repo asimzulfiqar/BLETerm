@@ -3,6 +3,11 @@ const path = require("path");
 const fs = require("fs");
 const log = require("electron-log");
 
+// Electron 33 / Chromium 130+ triggers FATAL "Detected dangling raw_ptr in unretained"
+// via the V8 inspector when Web Bluetooth runs with DevTools open. Disabling this
+// Chromium runtime check prevents the crash; the underlying Bluetooth code is unaffected.
+app.commandLine.appendSwitch("disable-features", "PartitionAllocUnretainedDanglingPtr");
+
 let store;
 let bluetoothSelectionTimer;
 let pendingBluetoothCallback = null;
