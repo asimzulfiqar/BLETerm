@@ -112,7 +112,26 @@ export const webBluetoothTransport = {
 
     const gatt = servicesFor(profile);
     const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(gatt.service);
+
+    let service: BluetoothRemoteGATTService;
+    try {
+      service = await server.getPrimaryService(gatt.service);
+    } catch (err) {
+      server.disconnect();
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("No Services matching UUID") || msg.includes("GATT Error")) {
+        throw new Error(
+          `"${device.name || "Device"}" does not expose the ${gatt.profile} UART service.\n` +
+          `To use this phone/device as a BLE UART terminal:\n` +
+          `  Android: install nRF Connect → Advertiser tab → add NUS service UUID\n` +
+          `           6e400001-b5a3-f393-e0a9-e50e24dcca9e → Start advertising.\n` +
+          `  iOS: install LightBlue → Virtual Devices → add the same UUID.\n` +
+          `If this is your Dragino sensor, make sure BLE is enabled and the device is powered.`
+        );
+      }
+      throw err;
+    }
+
     const tx = (await service.getCharacteristic(gatt.tx)) as BluetoothRemoteGATTCharacteristicWithWrite;
     const rx = await service.getCharacteristic(gatt.rx);
 
