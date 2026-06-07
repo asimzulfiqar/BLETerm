@@ -5,6 +5,8 @@ const log = require("electron-log");
 
 let store;
 let bluetoothSelectionTimer;
+let pendingBluetoothCallback = null;
+const discoveredBleDevices = new Map(); // deduplicates as events fire repeatedly
 
 log.transports.file.level = "info";
 
@@ -33,17 +35,55 @@ function logsRoot() {
 function attachWindowDiagnostics(win) {
   win.webContents.on("select-bluetooth-device", (event, deviceList, callback) => {
     event.preventDefault();
-    clearTimeout(bluetoothSelectionTimer);
 
-    if (deviceList.length === 0) {
-      bluetoothSelectionTimer = setTimeout(() => callback(""), 10000);
-      return;
+    // Accumulate all discovered devices (event fires repeatedly as more are found)
+    for (const device of deviceList) {
+      discoveredBleDevices.set(device.deviceId, device);
     }
+    pendingBluetoothCallback = callback;
 
-    const namedDevice = deviceList.find((device) => device.deviceName && device.deviceName.trim().length > 0);
-    const selected = namedDevice ?? deviceList[0];
-    directLog(`Selected Bluetooth device ${selected.deviceName || selected.deviceId}`);
-    callback(selected.deviceId);
+    // Debounce: wait 2.5s after the last discovery before showing the picker
+    clearTimeout(bluetoothSelectionTimer);
+    bluetoothSelectionTimer = setTimeout(async () => {
+      const devices = Array.from(discoveredBleDevices.values());
+      discoveredBleDevices.clear();
+      pendingBluetoothCallback = null;
+
+      if (devices.length === 0) {
+        directLog("BLE scan: no devices found.");
+        callback("");
+        return;
+      }
+
+      // Prefer named devices; fall back to unnamed if nothing else
+      const named = devices.filter((d) => d.deviceName && d.deviceName.trim());
+      const candidates = named.length > 0 ? named : devices;
+
+      if (candidates.length === 1) {
+        directLog(`BLE scan: auto-selected single device "${candidates[0].deviceName || candidates[0].deviceId}"`);
+        callback(candidates[0].deviceId);
+        return;
+      }
+
+      // Multiple devices found — let the user choose
+      const labels = candidates.map((d) => d.deviceName || `Unknown (${d.deviceId.slice(0, 8)})`);
+      const { response } = await dialog.showMessageBox(win, {
+        type: "question",
+        title: "BLETerm — Select BLE Device",
+        message: `Found ${candidates.length} BLE devices nearby. Select one to scan:`,
+        buttons: [...labels, "Cancel"],
+        cancelId: candidates.length,
+        noLink: true
+      });
+
+      if (response < candidates.length) {
+        directLog(`BLE scan: user selected "${candidates[response].deviceName || candidates[response].deviceId}"`);
+        callback(candidates[response].deviceId);
+      } else {
+        directLog("BLE scan: user cancelled device selection.");
+        callback("");
+      }
+    }, 2500);
   });
 
   win.webContents.session.setBluetoothPairingHandler((_details, callback) => {
