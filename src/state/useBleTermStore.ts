@@ -5,6 +5,9 @@ import type { BleDevice, ConnectionState, DeviceProfile, PresetPack, Routine, Se
 
 const STORE_KEY = "bleterm-state-v1";
 
+// Resolved by appendEvent when an RX line matches the active auth successPattern
+let authResolver: ((matched: boolean) => void) | null = null;
+
 interface BleTermState {
   ready: boolean;
   connectionState: ConnectionState;
@@ -175,6 +178,7 @@ export const useBleTermStore = create<BleTermState>((set, get) => ({
           void get().appendEvent({ type: "rx", data });
         });
         webBluetoothTransport.setDisconnectHandler(() => {
+          authResolver = null;
           set({ connectionState: "Disconnected", activeDevice: undefined });
           void get().appendEvent({ type: "system", data: `${device.name} disconnected.` });
         });
@@ -191,9 +195,40 @@ export const useBleTermStore = create<BleTermState>((set, get) => ({
 
     if (profile && profile.auth.type !== "none" && profile.auth.credential) {
       set({ connectionState: "Authenticating" });
-      await get().appendEvent({ type: "system", data: "Authenticating with saved profile credential..." });
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      await get().appendEvent({ type: "system", data: `Sending PIN to ${device.name}...` });
+      // Give the device 600 ms to finish GATT negotiation before sending
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      const authOk = await new Promise<boolean>((resolve) => {
+        const successRx = profile.auth.successPattern ? new RegExp(profile.auth.successPattern, "i") : null;
+        const tid = setTimeout(() => { authResolver = null; resolve(false); }, 4000);
+
+        if (successRx) {
+          authResolver = (matched) => { clearTimeout(tid); resolve(matched); };
+        } else {
+          // No pattern to wait for — assume success after write
+          clearTimeout(tid);
+        }
+
+        const raw = `${profile.auth.credential}${terminator(profile)}`;
+        if (device.transport === "webBluetooth") {
+          void webBluetoothTransport.write(raw).then(() => {
+            if (!successRx) resolve(true);
+          }).catch(() => { authResolver = null; resolve(false); });
+        } else {
+          // Demo device — simulate success
+          setTimeout(() => { authResolver = null; resolve(true); }, 300);
+        }
+      });
+
+      await get().appendEvent({
+        type: "system",
+        data: authOk
+          ? "PIN accepted — device ready."
+          : "PIN sent — no confirmation received (device may not echo auth response)."
+      });
     }
+
     set({ connectionState: "Connected" });
     await get().appendEvent({ type: "system", data: `Connected to ${device.name}. Profile: ${profile?.nickname ?? "Generic"}. MTU: auto.` });
   },
@@ -206,6 +241,17 @@ export const useBleTermStore = create<BleTermState>((set, get) => ({
   appendEvent: async (event) => {
     const entry = { ts: new Date().toISOString(), ...event };
     set((state) => ({ sessionEvents: [...state.sessionEvents, entry] }));
+
+    // Fire the auth promise when an RX line matches the profile's successPattern
+    if (entry.type === "rx" && authResolver) {
+      const active = get().profiles.find((p) => p.id === get().activeProfileId);
+      if (active?.auth.successPattern && new RegExp(active.auth.successPattern, "i").test(entry.data)) {
+        const resolve = authResolver;
+        authResolver = null;
+        resolve(true);
+      }
+    }
+
     const name = get().activeDevice?.name ?? get().profiles.find((item) => item.id === get().activeProfileId)?.nickname ?? "BLETerm";
     await window.bleterm?.logs.append(name, entry);
     if (entry.type === "rx") {

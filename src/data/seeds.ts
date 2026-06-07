@@ -13,7 +13,7 @@ export const profiles: DeviceProfile[] = [
     caseMode: "uppercase",
     mtu: "auto",
     responseTimeoutMs: 2000,
-    auth: { type: "pin", credential: "", successPattern: "Password Correct" },
+    auth: { type: "pin", credential: "123456", successPattern: "Password Correct" },
     defaultPresetPack: "dragino-nb",
     colorTag: "#00D4FF",
     notes: "Starter profile for Dragino BLE transparent UART devices.",

@@ -154,12 +154,14 @@ function XTerminalPane() {
 
 function CommandInput() {
   const [value, setValue] = useState("");
+  const [cursor, setCursor] = useState(-1);
   const sendCommand = useBleTermStore((state) => state.sendCommand);
   const history = useBleTermStore((state) => state.commandHistory);
   const activeProfile = useActiveProfile();
   const send = async () => {
     const command = value;
     setValue("");
+    setCursor(-1);
     await sendCommand(command);
   };
   return (
@@ -176,10 +178,21 @@ function CommandInput() {
           aria-label="AT command input"
           value={value}
           placeholder="Type AT command..."
-          onChange={(event) => setValue(event.target.value)}
+          onChange={(event) => { setValue(event.target.value); setCursor(-1); }}
           onKeyDown={(event) => {
-            if (event.key === "Enter") void send();
-            if (event.key === "ArrowUp" && history[0]) setValue(history[0]);
+            if (event.key === "Enter") { void send(); return; }
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              const next = Math.min(cursor + 1, history.length - 1);
+              setCursor(next);
+              if (history[next] !== undefined) setValue(history[next]);
+            }
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              const next = Math.max(cursor - 1, -1);
+              setCursor(next);
+              setValue(next >= 0 ? history[next] : "");
+            }
           }}
         />
         <button className="send-button" onClick={() => void send()}><Send size={16} /> Send</button>
@@ -322,6 +335,7 @@ function ProfilePanel() {
   const profile = useActiveProfile();
   const updateProfile = useBleTermStore((state) => state.updateProfile);
   const patch = (change: Partial<DeviceProfile>) => updateProfile({ ...profile, ...change });
+  const patchAuth = (change: Partial<DeviceProfile["auth"]>) => patch({ auth: { ...profile.auth, ...change } });
   return (
     <div className="panel-body form-panel">
       <label>Nickname<input value={profile.nickname} onChange={(event) => patch({ nickname: event.target.value })} /></label>
@@ -330,6 +344,23 @@ function ProfilePanel() {
       <label>Line terminator<select value={profile.lineTerminator} onChange={(event) => patch({ lineTerminator: event.target.value as DeviceProfile["lineTerminator"] })}><option>CRLF</option><option>CR</option><option>LF</option><option>none</option></select></label>
       <label>Case mode<select value={profile.caseMode} onChange={(event) => patch({ caseMode: event.target.value as DeviceProfile["caseMode"] })}><option value="uppercase">auto-uppercase</option><option value="preserve">preserve</option><option value="lowercase">auto-lowercase</option></select></label>
       <label>Timeout ms<input type="number" min="100" max="10000" value={profile.responseTimeoutMs} onChange={(event) => patch({ responseTimeoutMs: Number(event.target.value) })} /></label>
+      <label>Auth type
+        <select value={profile.auth.type} onChange={(event) => patchAuth({ type: event.target.value as DeviceProfile["auth"]["type"] })}>
+          <option value="none">none</option>
+          <option value="pin">PIN</option>
+          <option value="custom">custom</option>
+        </select>
+      </label>
+      {profile.auth.type !== "none" && (
+        <label>Auth PIN
+          <input
+            type="password"
+            value={profile.auth.credential ?? ""}
+            placeholder="e.g. 123456"
+            onChange={(event) => patchAuth({ credential: event.target.value })}
+          />
+        </label>
+      )}
       <label>Notes<textarea value={profile.notes} onChange={(event) => patch({ notes: event.target.value })} /></label>
       <button onClick={() => void window.bleterm?.file.export(`${profile.nickname}.atprofile`, JSON.stringify({ version: "1.1", ...profile }, null, 2))}><Download size={15} /> Export profile</button>
     </div>
